@@ -1,0 +1,7 @@
+requests
+pandas
+beautifulsoup4
+numpy
+pyyaml
+scikit-learn
+matplotlib

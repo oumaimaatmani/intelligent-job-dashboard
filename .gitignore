@@ -1,0 +1,25 @@
+cat > .gitignore << 'EOF'
+# Fichiers sensibles - Clés API
+src/config/settings.yaml
+
+# Power BI (trop lourd)
+*.pbix
+powerbi/*.pbix
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyc
+venv/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+
+# Système
+.DS_Store
+Thumbs.db
+*.log
+EOF

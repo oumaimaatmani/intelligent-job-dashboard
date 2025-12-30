@@ -1,0 +1,14 @@
+api_key: "YOUR_API_KEY"
+source_urls:
+  indeed: "https://www.indeed.com"
+  linkedin: "https://www.linkedin.com"
+data_collection:
+  max_results: 100
+  job_types:
+    - "full-time"
+    - "part-time"
+    - "contract"
+    - "internship"
+output:
+  raw_data_path: "data/raw/job_listings_raw.csv"
+  cleaned_data_path: "data/processed/job_listings_clean.csv"
