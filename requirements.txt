@@ -5,3 +5,7 @@ numpy
 pyyaml
 scikit-learn
 matplotlib
+nltk
+python-dateutil
+joblib
+spacy
