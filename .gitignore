@@ -6,6 +6,9 @@ src/config/settings.yaml
 *.pbix
 powerbi/*.pbix
 
+# Custom
+PROGRESS.md
+
 # Python cache
 __pycache__/
 *.py[cod]

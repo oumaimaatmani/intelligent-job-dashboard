@@ -1,0 +1,83 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: ijob-postgres
+    environment:
+      POSTGRES_USER: jobadmin
+      POSTGRES_PASSWORD: jobsecure123
+      POSTGRES_DB: intelligent_jobs_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobadmin -d intelligent_jobs_db"]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: ijob-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+
+  airflow:
+    image: apache/airflow:2.10.4-python3.11
+    container_name: ijob-airflow
+    environment:
+      AIRFLOW_HOME: /opt/airflow
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql://jobadmin:jobsecure123@postgres:5432/intelligent_jobs_db
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+      PYTHONPATH: /opt/airflow:/home/sora/Git/intelligent-job-dashboard/src
+      # Admin user setup for Airflow standalone
+      _AIRFLOW_WWW_USER_USERNAME: "admin"
+      _AIRFLOW_WWW_USER_PASSWORD: "admin123"
+      _AIRFLOW_WWW_USER_FIRSTNAME: "Admin"
+      _AIRFLOW_WWW_USER_LASTNAME: "User"
+      _AIRFLOW_WWW_USER_EMAIL: "admin@example.com"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ../src:/opt/airflow/src
+      - airflow_data:/opt/airflow
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      bash -c "
+      airflow db migrate &&
+      airflow users create \
+      --username user \
+      --password admin123 \
+      --firstname Admin \
+      --lastname User \
+      --role Admin \
+      --email admin@example.com || true &&
+      airflow api-server -p 8080 &
+      airflow scheduler
+      "
+      # bash -c "
+      #   # airflow db migrate &&
+      #   airflow standalone
+      #   "
+
+volumes:
+  postgres_data:
+  redis_data:
+  airflow_data:
