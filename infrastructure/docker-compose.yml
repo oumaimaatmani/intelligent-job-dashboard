@@ -1,9 +1,12 @@
-version: "3.8"
+# Production-grade Docker Compose for Intelligent Job Dashboard
+# Focus: Reliability, Security, Observability, Resource Management
 
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgres:15
     container_name: ijob-postgres
+    restart: unless-stopped
+    shm_size: 256mb
     environment:
       POSTGRES_USER: jobadmin
       POSTGRES_PASSWORD: jobsecure123
@@ -15,69 +18,103 @@ services:
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U jobadmin -d intelligent_jobs_db"]
-      interval: 5s
-      timeout: 2s
+      interval: 10s
+      timeout: 5s
       retries: 5
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   redis:
-    image: redis:7-alpine
+    image: redis:7
     container_name: ijob-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 2s
+      interval: 10s
+      timeout: 5s
       retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1.5G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   airflow:
     image: apache/airflow:2.10.4-python3.11
     container_name: ijob-airflow
+    restart: unless-stopped
     environment:
+      # Core Configuration
       AIRFLOW_HOME: /opt/airflow
       AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql://jobadmin:jobsecure123@postgres:5432/intelligent_jobs_db
-      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
-      PYTHONPATH: /opt/airflow:/home/sora/Git/intelligent-job-dashboard/src
-      # Admin user setup for Airflow standalone
-      _AIRFLOW_WWW_USER_USERNAME: "admin"
-      _AIRFLOW_WWW_USER_PASSWORD: "admin123"
-      _AIRFLOW_WWW_USER_FIRSTNAME: "Admin"
-      _AIRFLOW_WWW_USER_LASTNAME: "User"
-      _AIRFLOW_WWW_USER_EMAIL: "admin@example.com"
+      # Security
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "false"
+      AIRFLOW__CORE__FERNET_KEY: 7M6RVVTa_jzZYj6cEp9rjYF_T-DhV-gJ1n4k8p_lR5U=
+      # Performance
+      PYTHONPATH: /opt/airflow:/opt/airflow/src
     ports:
       - "8080:8080"
     volumes:
+      - ./airflow/entrypoint.sh:/opt/airflow/entrypoint.sh
       - ./airflow/dags:/opt/airflow/dags
       - ../src:/opt/airflow/src
-      - airflow_data:/opt/airflow
+      - airflow_logs:/opt/airflow/logs
     depends_on:
       postgres:
         condition: service_healthy
-    command:
-      bash -c "
-      airflow db migrate &&
-      airflow users create \
-      --username user \
-      --password admin123 \
-      --firstname Admin \
-      --lastname User \
-      --role Admin \
-      --email admin@example.com || true &&
-      airflow api-server -p 8080 &
-      airflow scheduler
-      "
-      # bash -c "
-      #   # airflow db migrate &&
-      #   airflow standalone
-      #   "
+    entrypoint: ["/bin/bash", "/opt/airflow/entrypoint.sh"]
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 volumes:
   postgres_data:
+    driver: local
   redis_data:
-  airflow_data:
+    driver: local
+  airflow_logs:
+    driver: local
