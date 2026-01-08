@@ -8,114 +8,64 @@
 
 ## System Architecture Diagram
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          DATA COLLECTION LAYER                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│    Adzuna API (Job Listings)        LinkedIn API (Future)                 │
-│           │                                │                               │
-│           └────────────────┬────────────────┘                              │
-│                            │                                               │
-│                    ┌───────▼────────┐                                      │
-│                    │ collect_data.py│  Fetch raw jobs, deduplicate, UUID  │
-│                    │   (Python)     │  generation                          │
-│                    └───────┬────────┘                                      │
-└─────────────────────────────┼──────────────────────────────────────────────┘
-                              │ Raw CSV
-                              │
-┌─────────────────────────────▼──────────────────────────────────────────────┐
-│                      DATA PROCESSING LAYER                                │
-├──────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  ┌─────────────────┐                                                    │
-│  │  clean_data.py  │  Remove duplicates, clean text, extract skills,  │
-│  │   (Python)      │  parse salary, standardize location               │
-│  └────────┬────────┘                                                    │
-│           │                                                              │
-│  ┌────────▼────────────────────┐                                        │
-│  │ Pandas + Regex + NLTK       │  Data transformation pipeline         │
-│  │ (HTML removal, dedup, NLP)  │                                        │
-│  └────────┬────────────────────┘                                        │
-│           │ Processed CSV                                               │
-│           │                                                              │
-│  ┌────────▼──────────────────────────┐                                  │
-│  │       nlp.py (scikit-learn)       │  Preprocess, TF-IDF             │
-│  │  TF-IDF Vectorization Engine      │  Vectorization, cosine          │
-│  │  (10K features, bigrams)          │  similarity                      │
-│  └────────┬──────────────────────────┘                                  │
-│           │ Joblib files (vectorizer.joblib, matrix.joblib)           │
-│           │                                                              │
-└───────────┼──────────────────────────────────────────────────────────────┘
-            │
-            └──────┬───────────────────────────────────────┐
-                   │                                       │
-                   │                     ┌─────────────┐   │
-                   │                     │ models/     │   │
-                   │                     │ tfidf/      │   │
-                   │                     │ [10 MB]     │   │
-                   │                     └─────────────┘   │
-                   │
-┌──────────────────▼─────────────────────────────────────────────────────────┐
-│                      ORCHESTRATION LAYER                                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Apache Airflow 2.10.4 (LocalExecutor)                                    │
-│  ┌─────────────────────────────────────────────────┐                      │
-│  │ DAG: collect_jobs_daily (triggers at 00:30 UTC)│                      │
-│  ├─────────────────────────────────────────────────┤                      │
-│  │ Task 1: collect  ──▶  Task 2: validate         │                      │
-│  │         ──▶  Task 3: enrich  ──▶  Task 4: vectorize  │                │
-│  │         ──▶  Task 5: export                     │                      │
-│  └─────────────────────────────────────────────────┘                      │
-│                        │                                                   │
-│  Monitoring Dashboard: http://localhost:8080                              │
-│  (Task logs, DAG runs, failure alerts)                                    │
-│                                                                             │
-└──────────────────────────────────────────────────────────────────────────┘
-                           │
-        ┌──────────────────┴──────────────────┐
-        │                                     │
-┌───────▼─────────────────┐      ┌───────────▼────────────┐
-│   PERSISTENCE LAYER     │      │   CACHE LAYER          │
-├─────────────────────────┤      ├────────────────────────┤
-│                         │      │                        │
-│  PostgreSQL 15          │      │  Redis 7               │
-│  (Port 5432)            │      │  (Port 6379)           │
-│                         │      │                        │
-│  Tables:                │      │  Use:                  │
-│  - jobs (8,737 rows)    │      │  - Recent query cache  │
-│  - model_versions       │      │  - Session store       │
-│  - batch_runs           │      │  - Model cache         │
-│  - Views (3)            │      │  - Airflow metadata    │
-│                         │      │                        │
-│  Indexes: 16            │      │  Persistence:          │
-│  Full-text search       │      │  - AOF enabled         │
-│  ACID transactions      │      │  - Max memory: 1GB     │
-│  Volume: 256 GB (fits)  │      │                        │
-│                         │      │                        │
-└────────┬────────────────┘      └────────────┬───────────┘
-         │                                    │
-         └──────────────────┬─────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────────────────────────┐
-│                         SERVING LAYER                                       │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  REST API (Future)                                                        │
-│  ┌────────────────────────────────────────┐                              │
-│  │ GET /api/jobs/search?q=python&top=10  │  Query jobs, get scores    │
-│  │ GET /api/recommend?job_id=xxx          │  Recommendations           │
-│  │ GET /api/batch/status                  │  Pipeline status           │
-│  └────────────────────────────────────────┘                              │
-│                  │                                                        │
-│  Clients:                                                                 │
-│  ├─ Power BI Dashboards (PostgreSQL direct query)                       │
-│  ├─ Web Dashboard (Future)                                              │
-│  ├─ Mobile App (Future)                                                │
-│  └─ Internal Tools                                                      │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph Collection["Collection Layer"]
+        Adzuna["Adzuna API"]
+        LinkedIn["LinkedIn API<br/>(Future)"]
+        Collect["collect_data.py<br/>(Python)"]
+    end
+
+    subgraph Processing["Processing Layer"]
+        Clean["clean_data.py<br/>(Python)"]
+        Transform["Pandas + Regex + NLTK<br/>(Data Transformation)"]
+        NLP["nlp.py<br/>(scikit-learn TF-IDF)"]
+    end
+
+    subgraph Storage["Storage Layer"]
+        PostgreSQL["PostgreSQL 15<br/>Port 5432<br/><br/>Tables:<br/>- jobs (8,737 rows)<br/>- model_versions<br/>- batch_runs<br/>- Views (3)<br/><br/>16 Indexes<br/>Full-text search<br/>ACID transactions"]
+        Models["models/tfidf/<br/>10 MB<br/><br/>vectorizer.joblib<br/>matrix.joblib"]
+        Redis["Redis 7<br/>Port 6379<br/><br/>Recent query cache<br/>Session store<br/>Model cache<br/>Airflow metadata<br/><br/>AOF enabled<br/>Max memory: 1GB"]
+    end
+
+    subgraph Orchestration["Orchestration Layer"]
+        Airflow["Apache Airflow 2.10.4<br/>LocalExecutor<br/><br/>DAG: collect_jobs_daily<br/>Triggers at 00:30 UTC<br/><br/>Tasks:<br/>1. collect → 2. validate<br/>→ 3. enrich → 4. vectorize<br/>→ 5. export<br/><br/>Monitoring: localhost:8080"]
+    end
+
+    subgraph Serving["Serving Layer"]
+        API["REST API<br/>(Future)<br/><br/>GET /api/jobs/search<br/>GET /api/recommend<br/>GET /api/batch/status"]
+        PowerBI["Power BI Dashboards<br/>(Direct DB query)"]
+        WebUI["Web Dashboard<br/>(Future)"]
+        Mobile["Mobile App<br/>(Future)"]
+        Internal["Internal Tools"]
+    end
+
+    Adzuna --> Collect
+    LinkedIn --> Collect
+    Collect --> Clean
+    Clean --> Transform
+    Transform --> NLP
+    NLP --> Models
+    NLP --> PostgreSQL
+    PostgreSQL --> Airflow
+    Models --> Airflow
+    Redis --> Airflow
+    Airflow --> PostgreSQL
+    Airflow --> Models
+    Airflow --> Redis
+    PostgreSQL --> API
+    Redis --> API
+    Models --> API
+    API --> PowerBI
+    API --> WebUI
+    API --> Mobile
+    API --> Internal
+
+    style Collection fill:#e1f5ff
+    style Processing fill:#f3e5f5
+    style Storage fill:#e8f5e9
+    style Orchestration fill:#fff3e0
+    style Serving fill:#fce4ec
 ```
 
 ---
@@ -124,86 +74,40 @@
 
 ### Collection to Serving (Complete Journey)
 
-```
-1. EXTRACTION
-   External Data Source (Adzuna API)
-                    │
-                    ▼
-   Raw job JSON response
-   - title, company, location, description, salary, url, posted_date
-                    │
-                    ▼
-   Python collect_data.py
-   - Parse JSON
-   - Generate UUID (deterministic from adzuna_id + url)
-   - Handle errors/missing fields
-   - Append to data/raw/job_listings_raw.csv
+```mermaid
+flowchart TD
+    A["Adzuna API<br/>(External Data Source)"] -->|"Raw JSON"| B["collect_data.py<br/>EXTRACTION<br/><br/>- Parse JSON<br/>- Generate UUID<br/>- Error handling<br/>- Append mode"]
 
-                    │
-                    ▼
-   Raw CSV file (8,737 rows)
+    B -->|"Raw CSV<br/>8,737 rows"| C["clean_data.py<br/>TRANSFORMATION<br/><br/>- Remove duplicates<br/>- HTML cleanup<br/>- Extract skills<br/>- Parse salary<br/>- Standardize location"]
 
-2. TRANSFORMATION
-   Python clean_data.py
-   ├─ Remove duplicates (job_id)
-   ├─ HTML removal from descriptions
-   ├─ Extract skills (regex matching)
-   ├─ Parse salary ranges (60,000 - 80,000 EUR)
-   ├─ Standardize locations (Paris, not 75001)
-   ├─ Calculate days_since_posted
-   ├─ Add quality flags (has_salary, has_skills)
-   └─ Output: data/processed/job_listings_clean.csv
+    C -->|"Cleaned DataFrame<br/>229 quality records"| D["nlp.py<br/>VECTORIZATION<br/><br/>- Text normalization<br/>- NLTK lemmatization<br/>- TF-IDF 10K features<br/>- Compute similarity"]
 
-                    │
-                    ▼
-   Cleaned DataFrame (229 quality records from 231 validated)
+    D -->|"Model Files"| E["Store Vectors<br/>models/tfidf/<br/><br/>- vectorizer.joblib 400KB<br/>- matrix.joblib 9.8MB"]
 
-3. VECTORIZATION
-   Python nlp.py
-   ├─ Lowercase + normalize text
-   ├─ Remove URLs, emails, stopwords
-   ├─ Lemmatize (NLTK)
-   ├─ Build TF-IDF (scikit-learn)
-   │  - 10,000 features
-   │  - Unigrams + bigrams
-   ├─ Compute cosine similarity matrix
-   └─ Serialize to joblib files
+    D -->|"Insert to DB"| F["PostgreSQL INSERT/UPDATE<br/>STORAGE<br/><br/>- INSERT 198 new jobs<br/>- UPDATE 31 existing<br/>- INSERT model_versions<br/>- INSERT batch_runs"]
 
-                    │
-                    ▼
-   Model files in models/tfidf/
-   - vectorizer.joblib (400 KB) - Transform new queries
-   - matrix.joblib (9.8 MB) - Pre-computed document vectors
-   - model_versions table entry (metadata)
+    F -->|"ACID Guaranteed"| G["PostgreSQL Database<br/><br/>- 8,737 rows indexed<br/>- 50ms avg query time"]
 
-4. STORAGE
-   PostgreSQL INSERT
-   ├─ INSERT INTO jobs (job_id, job_title, ...)
-   │  - 198 new jobs
-   │  - 31 updates to existing
-   ├─ INSERT INTO model_versions (model_version='tfidf_v20260108')
-   ├─ INSERT INTO batch_runs (batch_id, stage='export', status='success')
-   └─ Commit transaction
+    G -->|"Read + Cache"| H["Redis Layer<br/>1GB in-memory<br/>100K ops/sec"]
 
-                    │
-                    ▼
-   PostgreSQL Database (ACID guaranteed)
-   - jobs table: 8,737 rows indexed
-   - Queries < 50ms average
+    G -->|"Load vectors"| E
 
-5. SERVING
-   Client requests
-   ├─ Query from PostgreSQL (cached in Redis)
-   ├─ Load model from disk (joblib)
-   ├─ Compute recommendations (cosine similarity)
-   └─ Return top-N results with scores
+    H -->|"Cache Hit<br/>1ms response"| I["Serving Layer<br/><br/>- Search jobs<br/>- Get recommendations<br/>- Batch status"]
 
-                    │
-                    ▼
-   Response to client
-   - Ranked recommendations
-   - Job details, salary, skills
-   - Refresh cache in Redis
+    E -->|"Pre-computed vectors"| I
+
+    I -->|"Ranked Results"| J["Client Response<br/><br/>- Top-N recommendations<br/>- Job details & salary<br/>- Update Redis cache"]
+
+    style A fill:#e1f5ff
+    style B fill:#e1f5ff
+    style C fill:#f3e5f5
+    style D fill:#f3e5f5
+    style E fill:#e8f5e9
+    style F fill:#e8f5e9
+    style G fill:#e8f5e9
+    style H fill:#e8f5e9
+    style I fill:#fce4ec
+    style J fill:#fce4ec
 ```
 
 ---
@@ -406,75 +310,79 @@ Batch Duration: 7-8 minutes total
 
 ### Successful Batch Run
 
-```
-Time        Airflow          collect_data   clean_data     nlp          PostgreSQL    batch_runs
-│                                │               │           │                 │            │
-│                                │               │           │                 │            │
-├─ 00:30 ───> Trigger DAG        │               │           │                 │            │
-│                    │            │               │           │                 │            │
-├─ 00:31 ───────────────────────>│ Fetch jobs    │           │                 │            │
-│            Task: collect        │ from Adzuna   │           │                 │            │
-│                    │<───────────────────────────────────────────────────────────────────────────
-│                    │            │               │           │                 │            │ INSERT
-│                    │            │               │           │                 │            │ (stage=collect,
-│                    │            │               │           │                 │            │  jobs=245)
-│
-├─ 00:32 ────────────────────────────────────────> Validate  │                 │            │
-│            Task: validate                       │           │                 │            │
-│                    │<───────────────────────────────────────────────────────────────────────────
-│                    │                            │           │                 │            │ UPDATE
-│                    │                            │           │                 │            │ (stage=validate,
-│                    │                            │           │                 │            │  jobs=231)
-│
-├─ 00:33 ────────────────────────────────────────────────────> Clean & extract │            │
-│            Task: enrich                                     │ skills          │            │
-│                    │<───────────────────────────────────────────────────────────────────────────
-│                    │                                         │                 │            │ UPDATE
-│                    │                                         │                 │            │ (stage=enrich,
-│                    │                                         │                 │            │  jobs=229)
-│
-├─ 00:35 ────────────────────────────────────────────────────────────> Build    │            │
-│            Task: vectorize                                           │ TF-IDF  │            │
-│                    │                                                  │         │            │
-│                    │                                      Save to disk │         │            │
-│                    │<───────────────────────────────────────────────────────────────────────────
-│                    │                                                  │         │            │ INSERT
-│                    │                                                  │         │            │ model_versions
-│                    │                                                  │         │            │ UPDATE batch_runs
-│                    │                                                  │         │            │ (stage=vectorize)
-│
-├─ 00:38 ──────────────────────────────────────────────────────────────────────> COPY jobs   │
-│            Task: export                                                              │  INSERT/UPDATE
-│                    │                                                                 │  batch_runs
-│                    │<───────────────────────────────────────────────────────────────────────────
-│                    │                                                                 │
-└─ 00:39 Pipeline complete, success                                              Status=success
-            All records committed, cache updated
+```mermaid
+sequenceDiagram
+    participant Airflow
+    participant Collect as collect_data.py
+    participant Clean as clean_data.py
+    participant NLP as nlp.py
+    participant DB as PostgreSQL
+    participant Cache as Redis
+
+    Airflow->>Airflow: 00:30 Trigger DAG
+    Airflow->>Collect: 00:31 Task: collect
+    Collect->>Collect: Fetch from Adzuna API
+    Collect-->>DB: INSERT (stage=collect, jobs=245)
+
+    Airflow->>Clean: 00:32 Task: validate
+    Clean->>Clean: Quality checks
+    Clean-->>DB: UPDATE (stage=validate, jobs=231)
+
+    Airflow->>Clean: 00:33 Task: enrich
+    Clean->>Clean: Clean, extract skills
+    Clean-->>DB: UPDATE (stage=enrich, jobs=229)
+
+    Airflow->>NLP: 00:35 Task: vectorize
+    NLP->>NLP: Build TF-IDF model
+    NLP-->>NLP: Save to disk
+    NLP-->>DB: INSERT model_versions<br/>UPDATE batch_runs
+
+    Airflow->>DB: 00:38 Task: export
+    DB->>DB: COPY jobs (198 new, 31 update)
+    DB-->>Cache: Invalidate cache
+    DB-->>DB: UPDATE batch_runs (status=success)
+
+    Note over Airflow,Cache: 00:39 Pipeline complete<br/>All records committed
+    Note over Airflow,Cache: Total duration: 9 minutes<br/>Success rate: 100%
 ```
 
 ### Failed Batch (Recoverable Error)
 
-```
-Time        Airflow          collect_data   clean_data     nlp          PostgreSQL    Notification
-│                                │               │           │                 │            │
-├─ 00:30 ───> Trigger DAG        │               │           │                 │            │
-├─ 00:31 ────> collect           │ SUCCESS       │           │                 │            │
-├─ 00:32 ────> validate          │               │ SUCCESS   │                 │            │
-├─ 00:33 ────> enrich            │               │           │ TIMEOUT!        │            │
-│                                │               │           │ (Network error) │            │ ALERT
-│                                │               │           ├─ Retry 1 (60s wait)
-│                                │               │           ├─ Retry 2 (120s wait) ──────> Slack:
-│                                │               │           ├─ Retry 3 FAILED        │  "Stage ENRICH
-│                                │               │           X                         │   failed after
-│                                │               │                                     │   3 retries"
-│                                │               │           X─────────────────────────────────────>
-│                                │               │                              UPDATE batch_runs
-│                                │               │                              (status=failed,
-│                                │               │                               error=timeout)
-│
-└─ 00:40 PIPELINE STOPPED
-            No data written to PostgreSQL
-            Manual intervention required
+```mermaid
+sequenceDiagram
+    participant Airflow
+    participant Collect as collect_data.py
+    participant Clean as clean_data.py
+    participant NLP as nlp.py
+    participant DB as PostgreSQL
+    participant Notify as Slack Alert
+
+    Airflow->>Airflow: 00:30 Trigger DAG
+
+    Airflow->>Collect: 00:31 Task: collect
+    Collect-->>DB: SUCCESS
+
+    Airflow->>Clean: 00:32 Task: validate
+    Clean-->>DB: SUCCESS
+
+    Airflow->>Clean: 00:33 Task: enrich
+    Clean-->>DB: SUCCESS
+
+    Airflow->>NLP: 00:35 Task: vectorize
+    NLP->>NLP: Network timeout!
+    NLP->>NLP: Retry 1 (60s wait)
+    NLP->>NLP: Still timeout
+    NLP->>NLP: Retry 2 (120s wait)
+    NLP->>NLP: Still timeout
+    NLP->>NLP: Retry 3 FAILED
+
+    NLP-->>DB: UPDATE batch_runs<br/>(status=failed, error=timeout)
+    NLP-->>Notify: Alert sent
+    Notify-->>Notify: Slack: "Stage ENRICH<br/>failed after 3 retries"
+
+    Note over Airflow,Notify: 00:40 PIPELINE STOPPED
+    Note over Airflow,Notify: No data written to PostgreSQL
+    Note over Airflow,Notify: Manual intervention required
 ```
 
 ---
