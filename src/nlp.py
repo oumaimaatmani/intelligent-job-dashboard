@@ -1,13 +1,14 @@
-import re
 import logging
-from typing import List, Tuple, Optional
+import re
+from typing import List, Optional, Tuple
 
+import nltk
 import pandas as pd
+from nltk.stem import WordNetLemmatizer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-import nltk
-from nltk.stem import WordNetLemmatizer
+from config.paths import CLEAN_CSV_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,9 @@ def preprocess_text(text: str, lemmatize: bool = True) -> str:
     return text
 
 
-def build_tfidf_matrix(corpus: List[str], max_features: int = 10000, ngram_range: Tuple[int, int] = (1, 2)) -> Tuple[TfidfVectorizer, 'sparse_matrix']:
+def build_tfidf_matrix(
+    corpus: List[str], max_features: int = 10000, ngram_range: Tuple[int, int] = (1, 2)
+) -> Tuple[TfidfVectorizer, "sparse_matrix"]:
     """Build a TF-IDF vectorizer and transform corpus into matrix.
 
     Returns (vectorizer, matrix)
@@ -65,8 +68,7 @@ def build_tfidf_matrix(corpus: List[str], max_features: int = 10000, ngram_range
     return vectorizer, matrix
 
 
-
-#transformer la query, calcule la similarité cosinus entre la query et toutes les descriptions, ajoute _similarity_score et renvoier les top N offres triées.
+# transformer la query, calcule la similarité cosinus entre la query et toutes les descriptions, ajoute _similarity_score et renvoier les top N offres triées.
 def recommend_by_tfidf(
     query: str,
     docs: pd.DataFrame,
@@ -101,9 +103,18 @@ if __name__ == "__main__":
     import argparse
     from pathlib import Path
 
-    parser = argparse.ArgumentParser(description="Simple TF-IDF recommender for job descriptions")
-    parser.add_argument("--data", type=str, default="../data/processed/job_listings_clean.csv", help="CSV file with job listings")
-    parser.add_argument("--query", type=str, required=False, help="Search query (e.g. 'data scientist')")
+    parser = argparse.ArgumentParser(
+        description="Simple TF-IDF recommender for job descriptions"
+    )
+    parser.add_argument(
+        "--data",
+        type=str,
+        default=str(CLEAN_CSV_PATH),
+        help="CSV file with job listings",
+    )
+    parser.add_argument(
+        "--query", type=str, required=False, help="Search query (e.g. 'data scientist')"
+    )
     parser.add_argument("--top", type=int, default=10, help="Number of results to show")
     args = parser.parse_args()
 
@@ -115,7 +126,15 @@ if __name__ == "__main__":
     df = pd.read_csv(data_path)
     q = args.query or "data scientist"
     logger.info("Building TF-IDF matrix on %d documents", len(df))
-    vec, mat = build_tfidf_matrix(df.get("job_description", "").fillna("").astype(str).tolist())
+    vec, mat = build_tfidf_matrix(
+        df.get("job_description", "").fillna("").astype(str).tolist()
+    )
     logger.info("Query: %s", q)
-    res = recommend_by_tfidf(q, df, text_field="job_description", top_n=args.top, vectorizer=vec, matrix=mat)
-    print(res[["job_title", "company_name", "location", "_similarity_score"]].to_string(index=False))
+    res = recommend_by_tfidf(
+        q, df, text_field="job_description", top_n=args.top, vectorizer=vec, matrix=mat
+    )
+    print(
+        res[["job_title", "company_name", "location", "_similarity_score"]].to_string(
+            index=False
+        )
+    )
