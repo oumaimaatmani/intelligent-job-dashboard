@@ -524,6 +524,15 @@ def stage_4_vectorize(**context):
             logger.error(f"[VECTORIZE] Failed to save model_version: {e}")
             raise
 
+        # Cache vectorizer and matrix in Redis for fast access
+        try:
+            from redis_cache import cache_vectorizer_and_matrix
+            cache_vectorizer_and_matrix(vectorizer, matrix, model_version, ttl_seconds=604800)  # 7 days TTL
+            logger.info(f"[VECTORIZE] Cached model in Redis: {model_version}")
+        except Exception as e:
+            logger.warning(f"[VECTORIZE] Failed to cache model in Redis: {e}")
+            # Don't fail the pipeline if Redis caching fails
+
         # Log completion
         execution_time = int((datetime.now() - task_start).total_seconds())
         log_batch_run(batch_id, 'vectorize', 'success', jobs_count=jobs_vectorized, execution_time=execution_time)
