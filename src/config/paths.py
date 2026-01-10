@@ -63,6 +63,7 @@ MODELS_DIR = DATA_DIR / "models"
 
 # Specific file paths
 RAW_CSV_PATH = RAW_DIR / "job_listings_raw.csv"
+VALIDATED_CSV_PATH = PROCESSED_DIR / "job_listings_validated.csv"
 CLEAN_CSV_PATH = PROCESSED_DIR / "job_listings_clean.csv"
 ENRICHED_CSV_PATH = PROCESSED_DIR / "job_listings_enriched.csv"
 
@@ -91,6 +92,7 @@ if __name__ == "__main__":
     print(f"PROCESSED_DIR:      {PROCESSED_DIR}")
     print(f"MODELS_DIR:         {MODELS_DIR}")
     print(f"RAW_CSV_PATH:       {RAW_CSV_PATH}")
+    print(f"VALIDATED_CSV_PATH: {VALIDATED_CSV_PATH}")
     print(f"CLEAN_CSV_PATH:     {CLEAN_CSV_PATH}")
     print(f"VECTORIZER_PATH:    {VECTORIZER_PATH}")
     print(f"MATRIX_PATH:        {MATRIX_PATH}")

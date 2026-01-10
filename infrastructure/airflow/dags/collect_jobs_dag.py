@@ -44,6 +44,7 @@ from config.paths import (
     PROCESSED_DIR,
     RAW_CSV_PATH,
     RAW_DIR,
+    VALIDATED_CSV_PATH,
     ensure_directories,
 )
 
@@ -439,6 +440,14 @@ def stage_2_validate(**context):
         logger.info(f"[VALIDATE] Validation results: {valid_count}/{len(df)} passed")
         logger.info(f"[VALIDATE] Failed validations: {failed_validations}")
 
+        # Filter DataFrame to only valid jobs and write to validated CSV
+        df_valid = df[df["job_id"].isin(valid_job_ids)]
+        validated_csv_path = str(VALIDATED_CSV_PATH)
+        df_valid.to_csv(validated_csv_path, index=False, encoding="utf-8")
+        logger.info(
+            f"[VALIDATE] Wrote {len(df_valid)} validated jobs to {validated_csv_path}"
+        )
+
         # Log completion
         execution_time = int((datetime.now() - task_start).total_seconds())
         log_batch_run(
@@ -451,7 +460,9 @@ def stage_2_validate(**context):
 
         # Push to XCom
         context["task_instance"].xcom_push(key="jobs_validated", value=valid_count)
-        context["task_instance"].xcom_push(key="valid_job_ids", value=valid_job_ids)
+        context["task_instance"].xcom_push(
+            key="validated_csv_path", value=validated_csv_path
+        )
 
         logger.info(
             f"[VALIDATE] Stage 2 completed in {execution_time}s - {valid_count} jobs validated"
@@ -481,7 +492,7 @@ def stage_3_enrich(**context):
     Stage 3: Enrich data (clean, extract skills, parse salary)
 
     Input:
-        - raw_csv_path from Stage 1
+        - validated_csv_path from Stage 2
         - batch_id from Stage 1
 
     Processing:
@@ -509,13 +520,14 @@ def stage_3_enrich(**context):
     try:
         log_batch_run(batch_id, "enrich", "in_progress")
 
-        raw_csv_path = context["task_instance"].xcom_pull(
-            task_ids="collect_jobs", key="raw_csv_path"
+        # Read validated CSV from Stage 2 (instead of raw CSV)
+        validated_csv_path = context["task_instance"].xcom_pull(
+            task_ids="validate_jobs", key="validated_csv_path"
         )
         processed_csv_path = str(PROCESSED_DIR / "job_listings_enriched.csv")
 
-        # Run clean_data pipeline
-        clean_job_data(raw_csv_path, processed_csv_path)
+        # Run clean_data pipeline on validated data
+        clean_job_data(validated_csv_path, processed_csv_path)
         logger.info(f"[ENRICH] Cleaned data saved to {processed_csv_path}")
 
         # Count enriched jobs
